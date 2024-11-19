@@ -28,7 +28,7 @@ def process_image(image_path, disease_hue, chlorosis_hue_range):
     disease_mask = morphology.remove_small_objects(disease_mask.astype(bool), 300)
     disease_mask = morphology.remove_small_holes(disease_mask, 300)
 
-    chlorosis_mask = cv2.inRange(hsv_image, np.array([chlorosis_hue_min, 0, 0], dtype=np.uint8), np.array([chlorosis_hue_max, 255, 255], dtype=np.uint8))
+    chlorosis_mask = cv2.inRange(hsv_image, np.array([disease_hue, 0, 0], dtype=np.uint8), np.array([chlorosis_hue_max, 255, 255], dtype=np.uint8))
     chlorosis_mask = morphology.remove_small_objects(chlorosis_mask.astype(bool), 300)
     chlorosis_mask = morphology.remove_small_holes(chlorosis_mask, 300)
 
@@ -58,7 +58,6 @@ uploaded_files = st.file_uploader(
 # User inputs for hue values
 st.sidebar.header("Hue Configuration")
 disease_hue = st.sidebar.slider("Disease Hue", 0, 360, 30)
-chlorosis_hue_min = st.sidebar.slider("Chlorosis Hue Min", 0, 360, 30)
 chlorosis_hue_max = st.sidebar.slider("Chlorosis Hue Max", 0, 360, 43)
 
 if st.button("Process Images"):
