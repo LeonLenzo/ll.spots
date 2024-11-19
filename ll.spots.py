@@ -44,7 +44,19 @@ def process_image(image_path, disease_hue, chlorosis_hue_range):
         "disease_area": disease_area,
         "chlorosis_area": chlorosis_area,
     }
-
+# Helper function to create a slider with a dynamic hue background
+def hue_slider(label, min_value, max_value, value):
+    hue = st.slider(label, min_value, max_value, value)
+    hue_color = f"hsl({hue}, 100%, 50%)"
+    st.markdown(
+        f"""
+        <style>
+        .stSlider > div > div > div > div > div {{ background: {hue_color}; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    return hue
 # Streamlit app
 st.title("Leaf Health Analyzer")
 
