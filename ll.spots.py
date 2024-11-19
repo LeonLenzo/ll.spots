@@ -11,26 +11,38 @@ def normalize_hue(h):
     return int(h * 255 / 360)
 
 # Function to process a single image
-def process_image(image_path, disease_hue, chlorosis_hue_range):
+def process_image(image_path, combined_hue, chlorosis_hue_max, output_directory):
     image = Image.open(image_path)
     image_np = np.array(image)
     hsv_image = cv2.cvtColor(image_np, cv2.COLOR_RGB2HSV)
 
-    disease_hue = normalize_hue(disease_hue)
-    chlorosis_hue_min, chlorosis_hue_max = map(normalize_hue, chlorosis_hue_range)
+    combined_hue = normalize_hue(combined_hue)
+    chlorosis_hue_max = normalize_hue(chlorosis_hue_max)
 
     # Create binary masks
     leaf_mask = cv2.inRange(hsv_image, np.array([0, 0, 0], dtype=np.uint8), np.array([90, 255, 255], dtype=np.uint8))
     leaf_mask = morphology.remove_small_objects(leaf_mask.astype(bool), 500)
     leaf_mask = morphology.remove_small_holes(leaf_mask, 500)
 
-    disease_mask = cv2.inRange(hsv_image, np.array([0, 0, 0], dtype=np.uint8), np.array([disease_hue, 255, 255], dtype=np.uint8))
+    disease_mask = cv2.inRange(hsv_image, np.array([0, 0, 0], dtype=np.uint8), np.array([combined_hue, 255, 255], dtype=np.uint8))
     disease_mask = morphology.remove_small_objects(disease_mask.astype(bool), 300)
     disease_mask = morphology.remove_small_holes(disease_mask, 300)
 
-    chlorosis_mask = cv2.inRange(hsv_image, np.array([disease_hue, 0, 0], dtype=np.uint8), np.array([chlorosis_hue_max, 255, 255], dtype=np.uint8))
+    chlorosis_mask = cv2.inRange(hsv_image, np.array([combined_hue, 0, 0], dtype=np.uint8), np.array([chlorosis_hue_max, 255, 255], dtype=np.uint8))
     chlorosis_mask = morphology.remove_small_objects(chlorosis_mask.astype(bool), 300)
     chlorosis_mask = morphology.remove_small_holes(chlorosis_mask, 300)
+
+    # Create output mask
+    output = cv2.cvtColor(image_np, cv2.COLOR_RGB2RGBA)
+    output[leaf_mask == 0] = [0, 0, 0, 0]  # Background Colour
+    output[disease_mask != 0] = [166, 56, 22, 200]  # Disease Colour
+    output[chlorosis_mask != 0] = [255, 222, 83, 200]  # Chlorosis Colour
+
+    # Save the masked image
+    base_filename = os.path.splitext(os.path.basename(image_path))[0]
+    masked_image_path = os.path.join(output_directory, f"{base_filename}_masked.png")
+    os.makedirs(output_directory, exist_ok=True)
+    Image.fromarray(output).save(masked_image_path)
 
     # Calculate areas
     leaf_area = np.sum(leaf_mask)
@@ -39,24 +51,14 @@ def process_image(image_path, disease_hue, chlorosis_hue_range):
     healthy_area = leaf_area - disease_area - chlorosis_area
     
     return {
+        "filename": base_filename,
         "leaf_area": leaf_area,
         "healthy_area": healthy_area,
         "disease_area": disease_area,
         "chlorosis_area": chlorosis_area,
+        "masked_image_path": masked_image_path,
     }
-# Helper function to create a slider with a dynamic hue background
-def hue_slider(label, min_value, max_value, value):
-    hue = st.slider(label, min_value, max_value, value)
-    hue_color = f"hsl({hue}, 100%, 50%)"
-    st.markdown(
-        f"""
-        <style>
-        .stSlider > div > div > div > div > div {{ background: {hue_color}; }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    return hue
+
 # Streamlit app
 st.title("Leaf Health Analyzer")
 
@@ -69,12 +71,15 @@ uploaded_files = st.file_uploader(
 
 # User inputs for hue values
 st.sidebar.header("Hue Configuration")
-disease_hue = st.sidebar.slider("Disease Hue", 0, 360, 30)
+combined_hue = st.sidebar.slider("Disease/Chlorosis Hue Min", 0, 360, 30)
 chlorosis_hue_max = st.sidebar.slider("Chlorosis Hue Max", 0, 360, 43)
 
 if st.button("Process Images"):
     if uploaded_files:
         results = []
+        output_directory = "processed_images"  # Directory to save masked images
+        os.makedirs(output_directory, exist_ok=True)
+
         for uploaded_file in uploaded_files:
             # Save uploaded file to a temporary directory
             temp_path = os.path.join("temp", uploaded_file.name)
@@ -84,7 +89,7 @@ if st.button("Process Images"):
             
             # Process the image
             st.info(f"Processing {uploaded_file.name}...")
-            result = process_image(temp_path, disease_hue, (chlorosis_hue_min, chlorosis_hue_max))
+            result = process_image(temp_path, combined_hue, chlorosis_hue_max, output_directory)
             result["filename"] = uploaded_file.name
             results.append(result)
 
@@ -104,5 +109,17 @@ if st.button("Process Images"):
             file_name="leaf_health_analysis.csv",
             mime="text/csv"
         )
+
+        # Provide masked images for download
+        st.markdown("### Masked Images")
+        for result in results:
+            masked_image_path = result["masked_image_path"]
+            with open(masked_image_path, "rb") as f:
+                st.download_button(
+                    label=f"Download {result['filename']}_masked.png",
+                    data=f.read(),
+                    file_name=os.path.basename(masked_image_path),
+                    mime="image/png"
+                )
     else:
         st.error("Please upload at least one image.")
